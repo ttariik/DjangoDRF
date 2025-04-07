@@ -31,7 +31,7 @@ def market_single_view(request, pk):
     
     if request.method == 'PUT':
         market = Market.objects.get(pk = pk)
-        serializer = MarketSerializer(market, data = request.data)
+        serializer = MarketSerializer(market, data = request.data, partial = True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
