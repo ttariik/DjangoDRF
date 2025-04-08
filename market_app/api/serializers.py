@@ -2,60 +2,68 @@ from rest_framework import serializers
 from market_app.models import Market, Seller, Product
 import re
 
-def validate_text_field(value):
-    if any(char.isdigit() for char in value):
-        raise serializers.ValidationError("Dieses Feld darf keine Zahlen enthalten.")
-    if not re.match(r'^[a-zA-ZäöüÄÖÜß\s-]+$', value):
-        raise serializers.ValidationError("Only letters, spaces and hyphens allowed.")
-    return value
 
-
-class MarketSerializer(serializers.Serializer):
-    id = serializers.IntegerField(read_only = True)
-    name = serializers.CharField(max_length=255, required=False, validators = [validate_text_field])
-    location = serializers.CharField(max_length=255, required=False, validators = [validate_text_field])
-    description = serializers.CharField(required=False, validators = [validate_text_field])
-    net_worth = serializers.DecimalField(max_digits=100, decimal_places=2, required=False)
-
-
-    def create(self, validated_data):
-        return Market.objects.create(**validated_data)
+class MarketSerializer(serializers.ModelSerializer):
     
-    def update(self, instance, validated_data):
-        instance.name = validated_data.get('name', instance.name)
-        instance.location = validated_data.get('location', instance.location)
-        instance.description = validated_data.get('description', instance.description)
-        instance.net_worth = validated_data.get('net_worth', instance.net_worth)
-        instance.save()
-        return instance
+    sellers = serializers.HyperlinkedRelatedField(
+    many=True,
+    read_only=True,
+    view_name = "seller_single"
+)
+
     
-class SellerDetailSerializer(serializers.Serializer):
-    id = serializers.IntegerField(read_only=True)
-    name = serializers.CharField(max_length=255)
-    contact_info = serializers.CharField()
-    # markets = MarketSerializer(many=True, read_only=True)
-    markets = serializers.StringRelatedField(many = True)
+    
+    class Meta:
+        model = Market
+        exclude = []
+
+    def validate_name(self, value):
+        if not re.match(r'^[a-zA-ZäöüÄÖÜß\s-]+$', value):
+            raise serializers.ValidationError("Name may only contain letters, spaces, and hyphens.")
+        return value
+
+    def validate_description(self, value):
+        if not re.match(r'^[a-zA-ZäöüÄÖÜß\s-]+$', value):
+            raise serializers.ValidationError("Description may only contain letters, spaces, and hyphens.")
+        return value
+
+    def validate_location(self, value):
+        if not re.match(r'^[a-zA-ZäöüÄÖÜß\s-]+$', value):
+            raise serializers.ValidationError("Location may only contain letters, spaces, and hyphens.")
+        return value
 
 
-class SellerCreateSerializer(serializers.Serializer):
-    name = serializers.CharField(max_length=255)
-    contact_info = serializers.CharField()
-    markets = serializers.ListField(child=serializers.IntegerField(), write_only=True)
+class SellerSerializer(serializers.ModelSerializer):
+    markets = MarketSerializer(many=True, read_only=True)
+
+    market_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Market.objects.all(),
+        many=True,
+        write_only=True,
+        source='markets'
+    )
+
+    market_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Seller
+        fields = ['id', 'name', 'contact_info', 'markets', 'market_ids', 'market_count']
+
+    def get_market_count(self, obj):
+        return obj.markets.count()
 
     def validate_markets(self, value):
-        markets = Market.objects.filter(id__in=value)
-        if markets.count() != len(value):
+        if len(value) != Market.objects.filter(id__in=[m.id for m in value]).count():
             raise serializers.ValidationError("One or more Market IDs not found")
         return value
 
     def create(self, validated_data):
-        market_ids = validated_data.pop('markets')
         seller = Seller.objects.create(**validated_data)
-        markets = Market.objects.filter(id__in=market_ids)
+        markets = validated_data.get('markets', [])
         seller.markets.set(markets)
         return seller
 
- 
+
 class ProductSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     name = serializers.CharField(max_length=255)
@@ -85,7 +93,3 @@ class ProductSerializer(serializers.Serializer):
         instance.seller_id = validated_data.get('seller', instance.seller_id)
         instance.save()
         return instance
-
-
-
-    
